@@ -54,7 +54,7 @@ end
 # get a pointer to shared memory, with known (static) or zero length (dynamic shared memory)
 @generated function emit_shmem(::Val{id}, ::Type{T}, ::Val{len}=Val(0)) where {id,T,len}
     eltyp = convert(LLVMType, T)
-    T_ptr = convert(LLVMType, DevicePtr{T,AS.Shared})
+    T_ptr = convert(LLVMType, LLVMPtr{T,AS.Shared})
 
     # create a function
     llvm_f, _ = create_function(T_ptr)
@@ -62,7 +62,7 @@ end
     # create the global variable
     mod = LLVM.parent(llvm_f)
     gv_typ = LLVM.ArrayType(eltyp, len)
-    gv = GlobalVariable(mod, gv_typ, GPUCompiler.safe_name(string(id)), #=addrspace=# 3)
+    gv = GlobalVariable(mod, gv_typ, GPUCompiler.safe_name(string(id)), AS.Shared)
     if len > 0
         # static shared memory should be demoted to local variables, whenever possible.
         # this is done by the NVPTX ASM printer:
@@ -88,9 +88,10 @@ end
         ptr = gep!(builder, gv, [ConstantInt(0, JuliaContext()),
                                  ConstantInt(0, JuliaContext())])
 
-        val = ptrtoint!(builder, ptr, T_ptr)
-        ret!(builder, val)
+        untyped_ptr = bitcast!(builder, ptr, T_ptr)
+
+        ret!(builder, untyped_ptr)
     end
 
-    call_function(llvm_f, DevicePtr{T,AS.Shared})
+    call_function(llvm_f, LLVMPtr{T,AS.Shared})
 end
